@@ -1,7 +1,7 @@
-mod ip;
+mod icmp;
 
-use futures::StreamExt;
-use packet::{icmp, ip as p_ip, Packet};
+use futures::{StreamExt, SinkExt};
+use packet::{icmp as p_icmp, ip as p_ip, Packet};
 
 #[tokio::main]
 async fn main() {
@@ -9,7 +9,7 @@ async fn main() {
     let mut config = tun::Configuration::default();
     config
         .address((10, 0, 0, 1))
-        .destination((10, 0, 0, 2))
+        // .destination((10, 0, 0, 2))
         .netmask((255, 255, 255, 0))
         .up();
 
@@ -24,15 +24,34 @@ async fn main() {
 
     while let Some(packet) = stream.next().await {
         let Ok(pkt) = packet else { continue };
-        let Ok(p_ip::Packet::V4(pkt_v4)) = p_ip::Packet::new(pkt.get_bytes()) else {
+        let p = pkt.get_bytes();
+        // println!("p: {:#?}", p);
+        let Ok(p_ip::Packet::V4(pkt_v4)) = p_ip::Packet::new(p) else {
             continue;
         };
 
-        // icmp
-        if let Ok(icmp) = icmp::Packet::new(pkt_v4.payload()) {
-            let _ = ip::v4::icmp::Icmpv4Packet::build(icmp, pkt_v4, &mut stream)
-                .await
-                .is_ok();
+        // println!("pkt_v4: {:#?}", pkt_v4);
+        println!("ip source: {}", pkt_v4.source());
+        println!("ip destination: {}", pkt_v4.destination());
+        println!("\n");
+
+        // // icmp
+        if let Ok(icmp) = p_icmp::Packet::new(pkt_v4.payload()) {
+            match icmp::Icmpv4Packet::build(icmp, pkt_v4, &mut stream)
+            .await
+            .is_ok() {
+                true => continue,
+                false => {},
+            }
         }
+        
+        // let src = [10, 0, 0, 2];
+        // let dst = [10, 0, 0, 1];
+
+        // let mut np = p.to_vec()[..12].to_vec();
+        // np.extend_from_slice(&src);
+        // np.extend_from_slice(&dst);
+        // np.extend_from_slice(&p[20..]);
+        // let _ = stream.send(tun::TunPacket::new(np)).await.unwrap();
     }
 }
